@@ -75,11 +75,13 @@ class PetsDataset(Dataset):
     def _build_class_mapping(self):
         classes = set()
         for fname in self.image_files:
-            breed = "_".join(fname.split("_")[:-1])
+            breed = "_".join(fname.split("_")[:-1]).lower()
             classes.add(breed)
+            print(breed)
 
         classes = sorted(classes)
         self.class_to_idx = {cls: i for i, cls in enumerate(classes)}
+        print(self.class_to_idx.keys())
 
     def __len__(self):
         return len(self.image_files)
@@ -96,7 +98,7 @@ class PetsDataset(Dataset):
         # ========================
         # LABEL
         # ========================
-        breed = "_".join(img_name.split("_")[:-1])
+        breed = "_".join(img_name.split("_")[:-1]).lower()
         label = self.class_to_idx[breed]
 
         # ========================
