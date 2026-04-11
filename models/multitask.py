@@ -5,6 +5,8 @@ import os
 from .vgg11 import VGG11Encoder
 from .layers import CustomDropout
 from .segmentation import VGG11UNet
+from .classification import VGG11Classifier
+from .localization import VGG11Localizer
 
 
 class MultiTaskPerceptionModel(nn.Module):
@@ -29,61 +31,27 @@ class MultiTaskPerceptionModel(nn.Module):
         # ========================
         # MODELS
         # ========================
-        self.encoder = VGG11Encoder(in_channels)
-        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
+        
 
-        self.classifier_head = nn.Sequential(
-            nn.Linear(512, 4096),
-            nn.BatchNorm1d(4096),
-            nn.ReLU(inplace=True),
-            CustomDropout(0.5),
-            nn.Linear(4096, 4096),
-            nn.BatchNorm1d(4096),
-            nn.ReLU(inplace=True),
-            CustomDropout(0.5),
-            nn.Linear(4096, num_breeds),
-        )
-
-        self.localization_head = nn.Sequential(
-            nn.Linear(512, 4096),
-            nn.BatchNorm1d(4096),
-            nn.ReLU(inplace=True),
-            CustomDropout(0.5),
-            nn.Linear(4096, 4096),
-            nn.BatchNorm1d(4096),
-            nn.ReLU(inplace=True),
-            CustomDropout(0.5),
-            nn.Linear(4096, 4),
-        )
-
+        
+        self.classifier = VGG11Classifier(num_classes=num_breeds)
+        self.localizer = VGG11Localizer()
         self.segmenter = VGG11UNet(num_classes=seg_classes, in_channels=in_channels)
 
         # ========================
         # 🔥 LOAD WEIGHTS (FIX)
         # ========================
-        self.load_state_dict(torch.load(classifier_path, map_location="cpu"), strict=False)
-        self.load_state_dict(torch.load(localizer_path, map_location="cpu"), strict=False)
+        self.classifier.load_state_dict(torch.load(classifier_path, map_location="cpu"))
+        self.localizer.load_state_dict(torch.load(localizer_path, map_location="cpu"))
         self.segmenter.load_state_dict(torch.load(unet_path, map_location="cpu"))
 
         self.eval()
 
     def forward(self, x):
-        bottleneck = self.encoder(x)
 
-        pooled = self.avgpool(bottleneck)
-        flattened = torch.flatten(pooled, 1)
-
-        classification_logits = self.classifier_head(flattened)
-
-        localization_bbox = self.localization_head(flattened)
-
-        # 👉 FIX bbox format
-        x1, y1, x2, y2 = localization_bbox[:, 0], localization_bbox[:, 1], localization_bbox[:, 2], localization_bbox[:, 3]
-        cx = (x1 + x2) / 2
-        cy = (y1 + y2) / 2
-        w = x2 - x1
-        h = y2 - y1
-        localization_bbox = torch.stack([cx, cy, w, h], dim=1)
+        classification_logits = self.classifier(x)
+        boxes = self.localizer(x)
+        localization_bbox = boxes
 
         segmentation_logits = self.segmenter(x)
 
