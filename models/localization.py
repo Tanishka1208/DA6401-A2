@@ -1,29 +1,76 @@
-"""Localization modules
-"""
-
 import torch
 import torch.nn as nn
+from models.layers import CustomDropout
+
 
 class VGG11Localizer(nn.Module):
-    """VGG11-based localizer."""
-
     def __init__(self, in_channels: int = 3, dropout_p: float = 0.5):
-        """
-        Initialize the VGG11Localizer model.
+        super().__init__()
 
-        Args:
-            in_channels: Number of input channels.
-            dropout_p: Dropout probability for the localization head.
-        """
-        pass
+        # ========================
+        # ENCODER (with BatchNorm)
+        # ========================
+        self.encoder = nn.Sequential(
+            nn.Conv2d(in_channels, 64, 3, padding=1),
+            nn.BatchNorm2d(64),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(2),
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Forward pass for localization model.
-        Args:
-            x: Input tensor of shape [B, in_channels, H, W].
+            nn.Conv2d(64, 128, 3, padding=1),
+            nn.BatchNorm2d(128),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(2),
 
-        Returns:
-            Bounding box coordinates [B, 4] in (x_center, y_center, width, height) format in original image pixel space(not normalized values).
-        """
-        # TODO: Implement forward pass.
-        raise NotImplementedError("Implement VGG11Localizer.forward")
+            nn.Conv2d(128, 256, 3, padding=1),
+            nn.BatchNorm2d(256),
+            nn.ReLU(inplace=True),
+
+            nn.Conv2d(256, 256, 3, padding=1),
+            nn.BatchNorm2d(256),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(2),
+
+            nn.Conv2d(256, 512, 3, padding=1),
+            nn.BatchNorm2d(512),
+            nn.ReLU(inplace=True),
+
+            nn.Conv2d(512, 512, 3, padding=1),
+            nn.BatchNorm2d(512),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(2),
+
+            nn.Conv2d(512, 512, 3, padding=1),
+            nn.BatchNorm2d(512),
+            nn.ReLU(inplace=True),
+
+            nn.Conv2d(512, 512, 3, padding=1),
+            nn.BatchNorm2d(512),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(2),
+        )
+
+        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
+
+        # ========================
+        # LOCALIZATION HEAD
+        # ========================
+        self.localizer = nn.Sequential(
+            nn.Linear(512, 4096),
+            nn.BatchNorm1d(4096),
+            nn.ReLU(inplace=True),
+            CustomDropout(dropout_p),
+
+            nn.Linear(4096, 4096),
+            nn.BatchNorm1d(4096),
+            nn.ReLU(inplace=True),
+            CustomDropout(dropout_p),
+
+            nn.Linear(4096, 4),
+        )
+
+    def forward(self, x: torch.Tensor):
+        x = self.encoder(x)
+        x = self.avgpool(x)
+        x = torch.flatten(x, 1)
+        bbox = self.localizer(x)
+        return bbox

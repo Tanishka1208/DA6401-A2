@@ -1,34 +1,81 @@
-"""Unified multi-task model
-"""
-
 import torch
 import torch.nn as nn
 
+from .vgg11 import VGG11Encoder
+from .layers import CustomDropout
+from .segmentation import VGG11UNet
+
+
 class MultiTaskPerceptionModel(nn.Module):
-    """Shared-backbone multi-task model."""
+    def __init__(self, num_breeds=37, seg_classes=3, in_channels=3):
+        super().__init__()
 
-    def __init__(self, num_breeds: int = 37, seg_classes: int = 3, in_channels: int = 3, classifier_path: str = "classifier.pth", localizer_path: str = "localizer.pth", unet_path: str = "unet.pth"):
-        """
-        Initialize the shared backbone/heads using these trained weights.
-        Args:
-            num_breeds: Number of output classes for classification head.
-            seg_classes: Number of output classes for segmentation head.
-            in_channels: Number of input channels.
-            classifier_path: Path to trained classifier weights.
-            localizer_path: Path to trained localizer weights.
-            unet_path: Path to trained unet weights.
-        """
-        pass
+        # ========================
+        # SHARED BACKBONE
+        # ========================
+        self.encoder = VGG11Encoder(in_channels)
 
-    def forward(self, x: torch.Tensor):
-        """Forward pass for multi-task model.
-        Args:
-            x: Input tensor of shape [B, in_channels, H, W].
-        Returns:
-            A dict with keys:
-            - 'classification': [B, num_breeds] logits tensor.
-            - 'localization': [B, 4] bounding box tensor.
-            - 'segmentation': [B, seg_classes, H, W] segmentation logits tensor
-        """
-        # TODO: Implement forward pass.
-        raise NotImplementedError("Implement MultiTaskPerceptionModel.forward")
+        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
+
+        # ========================
+        # CLASSIFICATION HEAD
+        # ========================
+        self.classifier_head = nn.Sequential(
+            nn.Linear(512, 4096),
+            nn.BatchNorm1d(4096),
+            nn.ReLU(inplace=True),
+            CustomDropout(0.5),
+
+            nn.Linear(4096, 4096),
+            nn.BatchNorm1d(4096),
+            nn.ReLU(inplace=True),
+            CustomDropout(0.5),
+
+            nn.Linear(4096, num_breeds),
+        )
+
+        # ========================
+        # LOCALIZATION HEAD
+        # ========================
+        self.localization_head = nn.Sequential(
+            nn.Linear(512, 4096),
+            nn.BatchNorm1d(4096),
+            nn.ReLU(inplace=True),
+            CustomDropout(0.5),
+
+            nn.Linear(4096, 4096),
+            nn.BatchNorm1d(4096),
+            nn.ReLU(inplace=True),
+            CustomDropout(0.5),
+
+            nn.Linear(4096, 4),
+        )
+
+        # ========================
+        # SEGMENTATION (UNET)
+        # ========================
+        self.segmenter = VGG11UNet(num_classes=seg_classes, in_channels=in_channels)
+
+    def forward(self, x):
+        # ========================
+        # SHARED ENCODER
+        # ========================
+        bottleneck = self.encoder(x)
+
+        pooled = self.avgpool(bottleneck)
+        flattened = torch.flatten(pooled, 1)
+
+        # ========================
+        # HEADS
+        # ========================
+        classification_logits = self.classifier_head(flattened)
+        localization_bbox = self.localization_head(flattened)
+
+        # segmentation uses full UNet
+        segmentation_logits = self.segmenter(x)
+
+        return {
+            "classification": classification_logits,
+            "localization": localization_bbox,
+            "segmentation": segmentation_logits,
+        }
