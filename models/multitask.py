@@ -2,9 +2,8 @@ import torch
 import torch.nn as nn
 import gdown
 import os
-
-from .classification import VGG11Classifier
-from .localization import VGG11Localizer
+from .vgg11 import VGG11Encoder
+from .layers import CustomDropout
 from .segmentation import VGG11UNet
 
 
@@ -18,7 +17,6 @@ class MultiTaskPerceptionModel(nn.Module):
 
         os.makedirs("checkpoints", exist_ok=True)
 
-        # Download
         if not os.path.exists(classifier_path):
             gdown.download(id="1CcLgl5ppsZJtiPeMv3fhe_JV8rXUM06Y", output=classifier_path, quiet=False)
 
@@ -29,51 +27,68 @@ class MultiTaskPerceptionModel(nn.Module):
             gdown.download(id="18e7k0Wg9eeoVrQxprPh1q0T_ntM5QA9m", output=unet_path, quiet=False)
 
         # ========================
-        # LOAD FULL MODELS
+        # MODELS
         # ========================
-        self.classifier = VGG11Classifier(num_classes=num_breeds)
-        self.localizer = VGG11Localizer()
+        self.encoder = VGG11Encoder(in_channels)
+        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
+
+        self.classifier_head = nn.Sequential(
+            nn.Linear(512, 4096),
+            nn.BatchNorm1d(4096),
+            nn.ReLU(inplace=True),
+            CustomDropout(0.5),
+            nn.Linear(4096, 4096),
+            nn.BatchNorm1d(4096),
+            nn.ReLU(inplace=True),
+            CustomDropout(0.5),
+            nn.Linear(4096, num_breeds),
+        )
+
+        self.localization_head = nn.Sequential(
+            nn.Linear(512, 4096),
+            nn.BatchNorm1d(4096),
+            nn.ReLU(inplace=True),
+            CustomDropout(0.5),
+            nn.Linear(4096, 4096),
+            nn.BatchNorm1d(4096),
+            nn.ReLU(inplace=True),
+            CustomDropout(0.5),
+            nn.Linear(4096, 4),
+        )
+
         self.segmenter = VGG11UNet(num_classes=seg_classes, in_channels=in_channels)
 
-        # 🔥 LOAD WEIGHTS (MOST IMPORTANT)
-        self.classifier.load_state_dict(torch.load(classifier_path, map_location="cpu"))
-        self.localizer.load_state_dict(torch.load(localizer_path, map_location="cpu"))
+        # ========================
+        # 🔥 LOAD WEIGHTS (FIX)
+        # ========================
+        self.load_state_dict(torch.load(classifier_path, map_location="cpu"), strict=False)
+        self.load_state_dict(torch.load(localizer_path, map_location="cpu"), strict=False)
         self.segmenter.load_state_dict(torch.load(unet_path, map_location="cpu"))
 
-        # eval mode
-        self.classifier.eval()
-        self.localizer.eval()
-        self.segmenter.eval()
+        self.eval()
 
     def forward(self, x):
-        # ========================
-        # CLASSIFICATION
-        # ========================
-        logits = self.classifier(x)
-        labels = torch.argmax(logits, dim=1)
+        bottleneck = self.encoder(x)
 
-        # ========================
-        # LOCALIZATION
-        # ========================
-        boxes = self.localizer(x)
+        pooled = self.avgpool(bottleneck)
+        flattened = torch.flatten(pooled, 1)
 
-        # 👉 convert to (cx, cy, w, h) if needed
-        if boxes.shape[1] == 4:
-            x1, y1, x2, y2 = boxes[:, 0], boxes[:, 1], boxes[:, 2], boxes[:, 3]
-            cx = (x1 + x2) / 2
-            cy = (y1 + y2) / 2
-            w = x2 - x1
-            h = y2 - y1
-            boxes = torch.stack([cx, cy, w, h], dim=1)
+        classification_logits = self.classifier_head(flattened)
 
-        # ========================
-        # SEGMENTATION
-        # ========================
-        seg_logits = self.segmenter(x)
-        masks = torch.argmax(seg_logits, dim=1)
+        localization_bbox = self.localization_head(flattened)
+
+        # 👉 FIX bbox format
+        x1, y1, x2, y2 = localization_bbox[:, 0], localization_bbox[:, 1], localization_bbox[:, 2], localization_bbox[:, 3]
+        cx = (x1 + x2) / 2
+        cy = (y1 + y2) / 2
+        w = x2 - x1
+        h = y2 - y1
+        localization_bbox = torch.stack([cx, cy, w, h], dim=1)
+
+        segmentation_logits = self.segmenter(x)
 
         return {
-            "classification": labels,
-            "localization": boxes,
-            "segmentation": masks,
+            "classification": classification_logits,   # ✅ logits
+            "localization": localization_bbox,         # ✅ (B,4)
+            "segmentation": segmentation_logits,       # ✅ (B,C,H,W)
         }
