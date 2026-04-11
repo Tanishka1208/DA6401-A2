@@ -59,9 +59,17 @@ class MultiTaskPerceptionModel(nn.Module):
 
     def forward(self, x):
 
+        # classification_logits = self.classifier(x)
+        # boxes = self.localizer(x)
+        # localization_bbox = boxes
         classification_logits = self.classifier(x)
-        boxes = self.localizer(x)
-        localization_bbox = boxes
+        localization_bbox = self.localizer(x)
+
+        # 🔥 FIX SCALE
+        if torch.max(localization_bbox) <= 1.5:
+            localization_bbox = localization_bbox * 224
+
+        localization_bbox = torch.clamp(localization_bbox, 0, 224)
 
         segmentation_logits = self.segmenter(x)
 

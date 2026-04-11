@@ -15,7 +15,18 @@ from torch.utils.data import Dataset
 IMAGES_URL = "https://www.robots.ox.ac.uk/~vgg/data/pets/data/images.tar.gz"
 ANNOTATIONS_URL = "https://www.robots.ox.ac.uk/~vgg/data/pets/data/annotations.tar.gz"
 
+from torchvision import transforms
 
+transform=transforms.Compose([
+        transforms.Resize((224, 224)),
+        transforms.RandomHorizontalFlip(),
+        transforms.RandomRotation(10),
+        transforms.ToTensor(),
+        transforms.Normalize(
+            mean=[0.485, 0.456, 0.406],
+            std=[0.229, 0.224, 0.225]
+        )
+    ])
 # ================================
 # DOWNLOAD + EXTRACT
 # ================================
@@ -43,7 +54,7 @@ def prepare_dataset(root):
 # DATASET CLASS
 # ================================
 class PetsDataset(Dataset):
-    def __init__(self, root="data", transform=None):
+    def __init__(self, root="data", transform=transform):
         self.root = root
         self.transform = transform
 
@@ -53,7 +64,9 @@ class PetsDataset(Dataset):
         self.masks_dir = os.path.join(root, "annotations", "trimaps")
         self.bbox_dir = os.path.join(root, "annotations", "xmls")
 
-        self.image_files = sorted(os.listdir(self.images_dir))
+        self.image_files = sorted([
+            f for f in os.listdir(self.images_dir) if f.endswith(".jpg")
+        ])
 
         # Build class mapping (37 breeds)
         self.class_to_idx = {}
@@ -81,20 +94,23 @@ class PetsDataset(Dataset):
         image = Image.open(img_path).convert("RGB")
 
         # ========================
-        # CLASS LABEL
+        # LABEL
         # ========================
         breed = "_".join(img_name.split("_")[:-1])
         label = self.class_to_idx[breed]
 
         # ========================
-        # SEGMENTATION MASK
+        # MASK
         # ========================
         mask_name = img_name.replace(".jpg", ".png")
         mask_path = os.path.join(self.masks_dir, mask_name)
         mask = Image.open(mask_path)
 
+        # 🔥 FIX: resize mask
+        mask = mask.resize((224, 224))
+
         # ========================
-        # BOUNDING BOX (XML)
+        # BBOX
         # ========================
         xml_name = img_name.replace(".jpg", ".xml")
         xml_path = os.path.join(self.bbox_dir, xml_name)
@@ -109,19 +125,20 @@ class PetsDataset(Dataset):
             xmax = int(bbox_xml.find("xmax").text)
             ymax = int(bbox_xml.find("ymax").text)
 
-            w_img, h_img = image.size
+            orig_w, orig_h = image.size
+            new_w, new_h = 224, 224
 
-            x_center = (xmin + xmax) / 2 / w_img
-            y_center = (ymin + ymax) / 2 / h_img
-            width = (xmax - xmin) / w_img
-            height = (ymax - ymin) / h_img
+            scale_x = new_w / orig_w
+            scale_y = new_h / orig_h
+
+            x_center = (xmin + xmax) / 2 * scale_x
+            y_center = (ymin + ymax) / 2 * scale_y
+            width = (xmax - xmin) * scale_x
+            height = (ymax - ymin) * scale_y
 
             bbox = torch.tensor([x_center, y_center, width, height], dtype=torch.float32)
-
         else:
-            # fallback (dummy box)
             bbox = torch.tensor([112, 112, 50, 50], dtype=torch.float32)
-
 
         # ========================
         # TRANSFORM
@@ -129,12 +146,14 @@ class PetsDataset(Dataset):
         if self.transform:
             image = self.transform(image)
 
+        # ========================
+        # MASK PROCESSING
+        # ========================
         mask = np.array(mask)
 
-# Remap labels
-        mask[mask == 2] = 0   # background
-        mask[mask == 1] = 1   # pet
-        mask[mask == 3] = 2   # outline
+        mask[mask == 2] = 0
+        mask[mask == 1] = 1
+        mask[mask == 3] = 2
 
         mask = torch.tensor(mask, dtype=torch.long)
 
