@@ -20,6 +20,8 @@ from losses.iou_loss import IoULoss
 def get_transform():
     return transforms.Compose([
         transforms.Resize((224, 224)),
+        transforms.RandomHorizontalFlip(),
+        transforms.RandomRotation(10),
         transforms.ToTensor(),
         transforms.Normalize(
             mean=[0.485, 0.456, 0.406],
@@ -139,7 +141,7 @@ def train_segmenter(args):
             images = images.to(device)
 
             # Convert mask to tensor + class indices
-            masks = torch.tensor(masks, dtype=torch.long).to(device)
+            masks = masks.to(device)
 
             outputs = model(images)
             loss = criterion(outputs, masks)

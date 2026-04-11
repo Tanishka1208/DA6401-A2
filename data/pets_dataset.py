@@ -109,16 +109,18 @@ class PetsDataset(Dataset):
             xmax = int(bbox_xml.find("xmax").text)
             ymax = int(bbox_xml.find("ymax").text)
 
-            x_center = (xmin + xmax) / 2
-            y_center = (ymin + ymax) / 2
-            width = xmax - xmin
-            height = ymax - ymin
+            w_img, h_img = image.size
 
-            bbox = [x_center, y_center, width, height]
+            x_center = (xmin + xmax) / 2 / w_img
+            y_center = (ymin + ymax) / 2 / h_img
+            width = (xmax - xmin) / w_img
+            height = (ymax - ymin) / h_img
+
+            bbox = torch.tensor([x_center, y_center, width, height], dtype=torch.float32)
 
         else:
             # fallback (dummy box)
-            bbox = [112, 112, 50, 50]
+            bbox = torch.tensor([112, 112, 50, 50], dtype=torch.float32)
 
 
         # ========================
@@ -128,6 +130,12 @@ class PetsDataset(Dataset):
             image = self.transform(image)
 
         mask = np.array(mask)
+
+# Remap labels
+        mask[mask == 2] = 0   # background
+        mask[mask == 1] = 1   # pet
+        mask[mask == 3] = 2   # outline
+
         mask = torch.tensor(mask, dtype=torch.long)
 
         return image, label, bbox, mask
