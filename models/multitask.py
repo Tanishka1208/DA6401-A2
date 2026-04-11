@@ -41,6 +41,16 @@ class MultiTaskPerceptionModel(nn.Module):
         # ========================
         # 🔥 LOAD WEIGHTS (FIX)
         # ========================
+        # DEBUG: check classifier keys
+        # state_dict = torch.load(classifier_path, map_location="cpu")
+        # print("Classifier keys sample:", list(state_dict.keys())[:5])
+
+        # # DEBUG: check localizer keys
+        # state_dict_loc = torch.load(localizer_path, map_location="cpu")
+        # print("Localizer keys sample:", list(state_dict_loc.keys())[:5])
+
+
+
         self.classifier.load_state_dict(torch.load(classifier_path, map_location="cpu"))
         self.localizer.load_state_dict(torch.load(localizer_path, map_location="cpu"))
         self.segmenter.load_state_dict(torch.load(unet_path, map_location="cpu"))
