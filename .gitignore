@@ -9,7 +9,6 @@ data/*.zip
 *.pth
 *.pt
 *.h5
-checkpoints/*.pth
 
 
 __pycache__/
