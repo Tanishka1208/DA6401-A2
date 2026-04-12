@@ -62,6 +62,9 @@ class MultiTaskPerceptionModel(nn.Module):
         # classification_logits = self.classifier(x)
         # boxes = self.localizer(x)
         # localization_bbox = boxes
+        mean = torch.tensor([0.485, 0.456, 0.406]).view(1,3,1,1).to(x.device)
+        std = torch.tensor([0.229, 0.224, 0.225]).view(1,3,1,1).to(x.device)
+        x = (x - mean) / std
         classification_logits = self.classifier(x)
         localization_bbox = self.localizer(x)
 
