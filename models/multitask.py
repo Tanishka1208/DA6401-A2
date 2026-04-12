@@ -51,10 +51,14 @@ class MultiTaskPerceptionModel(nn.Module):
         classification_logits = self.classifier(x)
         localization_bbox = self.localizer(x)
         
+        # Make width and height positive
         localization_bbox[:, 2:] = torch.abs(localization_bbox[:, 2:])
 
-        # clamp to valid image range
-        localization_bbox = torch.clamp(localization_bbox, 0, 224)
+        # Only clamp center coordinates to image bounds
+        # Width/height should NOT be clamped (they can be larger than image)
+        localization_bbox[:, 0] = torch.clamp(localization_bbox[:, 0], 0, 224)  # cx
+        localization_bbox[:, 1] = torch.clamp(localization_bbox[:, 1], 0, 224)  # cy
+        
         segmentation_logits = self.segmenter(x)
 
         return {
