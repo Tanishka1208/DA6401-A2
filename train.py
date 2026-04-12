@@ -134,14 +134,13 @@ def train_localizer(args):
             bboxes_norm = bboxes / 224.0
 
             # Make sure width/height are positive for IoU computation
-            preds_copy = preds_norm.clone()
-            preds_copy[:, 2:] = torch.abs(preds_copy[:, 2:])
-            bboxes_copy = bboxes_norm.clone()
-            bboxes_copy[:, 2:] = torch.abs(bboxes_copy[:, 2:])
+            # Use non-inplace operations to avoid gradient computation errors
+            preds_normalized = torch.cat([preds_norm[:, :2], torch.abs(preds_norm[:, 2:])], dim=1)
+            bboxes_normalized = torch.cat([bboxes_norm[:, :2], torch.abs(bboxes_norm[:, 2:])], dim=1)
 
             # ✅ FIX: convert format for IoU
-            pred_xy = cxcywh_to_xyxy(preds_copy)
-            gt_xy   = cxcywh_to_xyxy(bboxes_copy)
+            pred_xy = cxcywh_to_xyxy(preds_normalized)
+            gt_xy   = cxcywh_to_xyxy(bboxes_normalized)
 
             # ✅ FINAL LOSS
             loss = reg_loss(preds_norm, bboxes_norm) + iou(pred_xy, gt_xy)
