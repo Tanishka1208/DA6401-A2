@@ -42,30 +42,17 @@ def load_model(args, device):
 
     # Load weights manually
     ckpt_dir = args.checkpoint_dir
+    model.classifier.load_state_dict(
+        torch.load(os.path.join(ckpt_dir, "classifier.pth"), map_location=device)
+    )
 
-    try:
-        model.classifier_head.load_state_dict(
-            torch.load(os.path.join(ckpt_dir, "classifier.pth"), map_location=device)
-        )
-        print("Loaded classifier weights")
-    except:
-        print("Warning: classifier weights not found")
+    model.localizer.load_state_dict(
+        torch.load(os.path.join(ckpt_dir, "localizer.pth"), map_location=device)
+    )
 
-    try:
-        model.localization_head.load_state_dict(
-            torch.load(os.path.join(ckpt_dir, "localizer.pth"), map_location=device)
-        )
-        print("Loaded localizer weights")
-    except:
-        print("Warning: localizer weights not found")
-
-    try:
-        model.segmenter.load_state_dict(
-            torch.load(os.path.join(ckpt_dir, "unet.pth"), map_location=device)
-        )
-        print("Loaded segmenter weights")
-    except:
-        print("Warning: segmenter weights not found")
+    model.segmenter.load_state_dict(
+        torch.load(os.path.join(ckpt_dir, "unet.pth"), map_location=device)
+    )
 
     model.to(device)
     model.eval()

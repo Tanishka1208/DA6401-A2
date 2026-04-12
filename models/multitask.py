@@ -38,18 +38,6 @@ class MultiTaskPerceptionModel(nn.Module):
         self.localizer = VGG11Localizer()
         self.segmenter = VGG11UNet(num_classes=seg_classes, in_channels=in_channels)
 
-        # ========================
-        # 🔥 LOAD WEIGHTS (FIX)
-        # ========================
-        # DEBUG: check classifier keys
-        # state_dict = torch.load(classifier_path, map_location="cpu")
-        # print("Classifier keys sample:", list(state_dict.keys())[:5])
-
-        # # DEBUG: check localizer keys
-        # state_dict_loc = torch.load(localizer_path, map_location="cpu")
-        # print("Localizer keys sample:", list(state_dict_loc.keys())[:5])
-
-
 
         self.classifier.load_state_dict(torch.load(classifier_path, map_location="cpu"))
         self.localizer.load_state_dict(torch.load(localizer_path, map_location="cpu"))
@@ -59,13 +47,11 @@ class MultiTaskPerceptionModel(nn.Module):
 
     def forward(self, x):
 
-        # classification_logits = self.classifier(x)
-        # boxes = self.localizer(x)
-        # localization_bbox = boxes
         
         classification_logits = self.classifier(x)
         localization_bbox = self.localizer(x)
-
+        if localization_bbox.dim() == 1:
+            localization_bbox = localization_bbox.unsqueeze(0)
         # ALWAYS scale (model trained on normalized values)
         localization_bbox = localization_bbox * 224.0
 
