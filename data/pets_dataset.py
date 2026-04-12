@@ -16,16 +16,14 @@ ANNOTATIONS_URL = "https://www.robots.ox.ac.uk/~vgg/data/pets/data/annotations.t
 
 from torchvision import transforms
 
-transform=transforms.Compose([
-        transforms.Resize((224, 224)),
-        transforms.RandomHorizontalFlip(),
-        transforms.RandomRotation(10),
-        transforms.ToTensor(),
-        transforms.Normalize(
-            mean=[0.485, 0.456, 0.406],
-            std=[0.229, 0.224, 0.225]
-        )
-    ])
+transform = transforms.Compose([
+    transforms.Resize((224, 224)),
+    transforms.ToTensor(),
+    transforms.Normalize(
+        mean=[0.485, 0.456, 0.406],
+        std=[0.229, 0.224, 0.225]
+    )
+])
 # ================================
 # DOWNLOAD + EXTRACT
 # ================================
@@ -72,15 +70,21 @@ class PetsDataset(Dataset):
         self._build_class_mapping()
 
     def _build_class_mapping(self):
-        classes = set()
-        for fname in self.image_files:
-            breed = "_".join(fname.split("_")[:-1]).lower()
-            classes.add(breed)
-            
+      
+        classes = [
+            'Abyssinian', 'american_bulldog', 'american_pit_bull_terrier',
+            'basset_hound', 'beagle', 'Bengal', 'Birman', 'Bombay',
+            'boxer', 'British_Shorthair', 'chihuahua', 'Egyptian_Mau',
+            'english_cocker_spaniel', 'english_setter', 'german_shorthaired',
+            'great_pyrenees', 'havanese', 'japanese_chin', 'keeshond',
+            'leonberger', 'Maine_Coon', 'miniature_pinscher',
+            'newfoundland', 'Persian', 'pomeranian', 'pug', 'Ragdoll',
+            'Russian_Blue', 'saint_bernard', 'samoyed', 'scottish_terrier',
+            'shiba_inu', 'Siamese', 'Sphynx', 'staffordshire_bull_terrier',
+            'wheaten_terrier', 'yorkshire_terrier'
+        ]
 
-        classes = sorted(classes)
         self.class_to_idx = {cls: i for i, cls in enumerate(classes)}
-       
 
     def __len__(self):
         return len(self.image_files)
@@ -97,7 +101,7 @@ class PetsDataset(Dataset):
         # ========================
         # LABEL
         # ========================
-        breed = "_".join(img_name.split("_")[:-1]).lower()
+        breed = "_".join(img_name.split("_")[:-1])
         label = self.class_to_idx[breed]
 
         # ========================
