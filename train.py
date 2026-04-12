@@ -105,7 +105,8 @@ def train_localizer(args):
     reg_loss = nn.SmoothL1Loss()
     iou = IoULoss()
 
-    optimizer = optim.Adam(model.parameters(), lr=args.lr)
+    optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-5)
+    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.5)
 
     best_loss = float("inf")
 
@@ -132,15 +133,22 @@ def train_localizer(args):
             preds_norm = preds / 224.0
             bboxes_norm = bboxes / 224.0
 
+            # Make sure width/height are positive for IoU computation
+            preds_copy = preds_norm.clone()
+            preds_copy[:, 2:] = torch.abs(preds_copy[:, 2:])
+            bboxes_copy = bboxes_norm.clone()
+            bboxes_copy[:, 2:] = torch.abs(bboxes_copy[:, 2:])
+
             # ✅ FIX: convert format for IoU
-            pred_xy = cxcywh_to_xyxy(preds_norm)
-            gt_xy   = cxcywh_to_xyxy(bboxes_norm)
+            pred_xy = cxcywh_to_xyxy(preds_copy)
+            gt_xy   = cxcywh_to_xyxy(bboxes_copy)
 
             # ✅ FINAL LOSS
             loss = reg_loss(preds_norm, bboxes_norm) + iou(pred_xy, gt_xy)
 
             optimizer.zero_grad()
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
 
             total_loss += loss.item()
@@ -151,6 +159,8 @@ def train_localizer(args):
         if avg_loss < best_loss:
             best_loss = avg_loss
             torch.save(model.state_dict(), os.path.join(args.ckpt_dir, "localizer.pth"))
+
+        scheduler.step()
 
 # ========================
 # SEGMENTATION TRAINING
