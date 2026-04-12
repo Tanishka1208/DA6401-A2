@@ -30,6 +30,23 @@ def get_transform():
     ])
 
 
+def get_localization_transform():
+    """Transform for localization WITHOUT geometric augmentations.
+    
+    RandomHorizontalFlip and RandomRotation would shift bbox coordinates,
+    which cannot be easily reflected back without custom code.
+    So we only use Resize, ToTensor, and Normalize.
+    """
+    return transforms.Compose([
+        transforms.Resize((224, 224)),
+        transforms.ToTensor(),
+        transforms.Normalize(
+            mean=[0.485, 0.456, 0.406],
+            std=[0.229, 0.224, 0.225]
+        )
+    ])
+
+
 # ========================
 # CLASSIFIER TRAINING
 # ========================
@@ -79,7 +96,7 @@ def train_classifier(args):
 def train_localizer(args):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    dataset = PetsDataset(root=args.data_dir, transform=get_transform())
+    dataset = PetsDataset(root=args.data_dir, transform=get_localization_transform())
     loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=0)
 
     model = VGG11Localizer().to(device)
@@ -141,7 +158,7 @@ def train_localizer(args):
 def train_segmenter(args):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    dataset = PetsDataset(root=args.data_dir, transform=get_transform())
+    dataset = PetsDataset(root=args.data_dir, transform=get_localization_transform())
     loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
 
     model = VGG11UNet(num_classes=3).to(device)
