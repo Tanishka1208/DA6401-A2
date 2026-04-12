@@ -80,16 +80,26 @@ def train_localizer(args):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     dataset = PetsDataset(root=args.data_dir, transform=get_transform())
-    loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
+    loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=0)
 
     model = VGG11Localizer().to(device)
 
-    mse = nn.MSELoss()
+    # ✅ FIX: better loss
+    reg_loss = nn.SmoothL1Loss()
     iou = IoULoss()
 
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
 
     best_loss = float("inf")
+
+    # 🔥 helper function (define once, not inside loop)
+    def cxcywh_to_xyxy(box):
+        cx, cy, w, h = box[:, 0], box[:, 1], box[:, 2], box[:, 3]
+        x1 = cx - w / 2
+        y1 = cy - h / 2
+        x2 = cx + w / 2
+        y2 = cy + h / 2
+        return torch.stack([x1, y1, x2, y2], dim=1)
 
     for epoch in range(args.epochs):
         model.train()
@@ -101,7 +111,16 @@ def train_localizer(args):
 
             preds = model(images)
 
-            loss = mse(preds, bboxes) + iou(preds, bboxes)
+            # ✅ FIX: normalize for stable training
+            preds_norm = preds / 224.0
+            bboxes_norm = bboxes / 224.0
+
+            # ✅ FIX: convert format for IoU
+            pred_xy = cxcywh_to_xyxy(preds_norm)
+            gt_xy   = cxcywh_to_xyxy(bboxes_norm)
+
+            # ✅ FINAL LOSS
+            loss = reg_loss(preds_norm, bboxes_norm) + iou(pred_xy, gt_xy)
 
             optimizer.zero_grad()
             loss.backward()
@@ -115,7 +134,6 @@ def train_localizer(args):
         if avg_loss < best_loss:
             best_loss = avg_loss
             torch.save(model.state_dict(), os.path.join(args.ckpt_dir, "localizer.pth"))
-
 
 # ========================
 # SEGMENTATION TRAINING
