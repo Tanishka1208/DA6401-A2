@@ -66,12 +66,11 @@ class MultiTaskPerceptionModel(nn.Module):
         classification_logits = self.classifier(x)
         localization_bbox = self.localizer(x)
 
-        # 🔥 FIX SCALE
-        if torch.max(localization_bbox) <= 1.5:
-            localization_bbox = localization_bbox * 224
+        # ALWAYS scale (model trained on normalized values)
+        localization_bbox = localization_bbox * 224.0
 
+        # clamp to valid image range
         localization_bbox = torch.clamp(localization_bbox, 0, 224)
-
         segmentation_logits = self.segmenter(x)
 
         return {
