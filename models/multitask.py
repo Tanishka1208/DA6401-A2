@@ -51,17 +51,14 @@ class MultiTaskPerceptionModel(nn.Module):
         classification_logits = self.classifier(x)
         localization_bbox = self.localizer(x)
         
-        # The model was trained with: preds_norm = preds / 224.0
-        # This means the model learned to output values that when divided by 224, 
-        # match the normalized ground truth [0, 1]
-        # So raw preds are in the [0, 224] range
-        
-        # Make width and height positive
+        # Model outputs in pixel space [cx, cy, w, h]
+        # Ensure width and height are positive
         localization_bbox[:, 2:] = torch.abs(localization_bbox[:, 2:])
 
-        # Clamp all values to valid image range [0, 224]
-        # (center coords AND width/height should be in image space)
-        localization_bbox = torch.clamp(localization_bbox, 0, 224)
+        # Clamp center coordinates to image bounds [0, 224]
+        # Allow width/height to extend beyond boundaries (valid for objects partially visible)
+        localization_bbox[:, 0] = torch.clamp(localization_bbox[:, 0], 0, 224)  # cx
+        localization_bbox[:, 1] = torch.clamp(localization_bbox[:, 1], 0, 224)  # cy
         
         segmentation_logits = self.segmenter(x)
 

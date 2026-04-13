@@ -57,6 +57,15 @@ def train_classifier(args):
     loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
 
     model = VGG11Classifier().to(device)
+    activations = []
+
+    def hook_fn(module, input, output):
+        activations.append(output.detach().cpu())
+
+    # Hook 3rd conv layer
+    model.features[4].register_forward_hook(hook_fn)
+
+
 
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
@@ -101,23 +110,11 @@ def train_localizer(args):
 
     model = VGG11Localizer().to(device)
 
-    # ✅ FIX: better loss
-    reg_loss = nn.SmoothL1Loss()
-    iou = IoULoss()
-
-    optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-5)
-    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.5)
+    # Use smooth L1 loss for bounding box regression
+    criterion = nn.SmoothL1Loss()
+    optimizer = optim.Adam(model.parameters(), lr=args.lr)
 
     best_loss = float("inf")
-
-    # 🔥 helper function (define once, not inside loop)
-    def cxcywh_to_xyxy(box):
-        cx, cy, w, h = box[:, 0], box[:, 1], box[:, 2], box[:, 3]
-        x1 = cx - w / 2
-        y1 = cy - h / 2
-        x2 = cx + w / 2
-        y2 = cy + h / 2
-        return torch.stack([x1, y1, x2, y2], dim=1)
 
     for epoch in range(args.epochs):
         model.train()
@@ -127,27 +124,18 @@ def train_localizer(args):
             images = images.to(device)
             bboxes = bboxes.to(device)
 
-            preds = model(images)
+            # Forward pass
+            preds = model(images)  # [B, 4] in pixel space [cx, cy, w, h]
 
-            # ✅ FIX: normalize for stable training
-            preds_norm = preds / 224.0
-            bboxes_norm = bboxes / 224.0
+            # Make sure width and height are positive
+            preds_adjusted = torch.cat([preds[:, :2], torch.abs(preds[:, 2:])], dim=1)
 
-            # Make sure width/height are positive for IoU computation
-            # Use non-inplace operations to avoid gradient computation errors
-            preds_normalized = torch.cat([preds_norm[:, :2], torch.abs(preds_norm[:, 2:])], dim=1)
-            bboxes_normalized = torch.cat([bboxes_norm[:, :2], torch.abs(bboxes_norm[:, 2:])], dim=1)
+            # SmoothL1 loss directly on pixel space (no normalization)
+            loss = criterion(preds_adjusted, bboxes)
 
-            # ✅ FIX: convert format for IoU
-            pred_xy = cxcywh_to_xyxy(preds_normalized)
-            gt_xy   = cxcywh_to_xyxy(bboxes_normalized)
-
-            # ✅ FINAL LOSS
-            loss = reg_loss(preds_norm, bboxes_norm) + iou(pred_xy, gt_xy)
-
+            # Backward pass
             optimizer.zero_grad()
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
 
             total_loss += loss.item()
@@ -158,8 +146,6 @@ def train_localizer(args):
         if avg_loss < best_loss:
             best_loss = avg_loss
             torch.save(model.state_dict(), os.path.join(args.ckpt_dir, "localizer.pth"))
-
-        scheduler.step()
 
 # ========================
 # SEGMENTATION TRAINING

@@ -3,6 +3,48 @@ from typing import Dict, Tuple, Union
 import torch
 import torch.nn as nn
 
+import torch
+import torch.nn as nn
+
+class VGG11Custom(nn.Module):
+    def __init__(self, use_bn=True):
+        super().__init__()
+
+        def conv_block(in_c, out_c):
+            if use_bn:
+                return nn.Sequential(
+                    nn.Conv2d(in_c, out_c, kernel_size=3, padding=1),
+                    nn.BatchNorm2d(out_c),
+                    nn.ReLU(inplace=True)
+                )
+            else:
+                return nn.Sequential(
+                    nn.Conv2d(in_c, out_c, kernel_size=3, padding=1),
+                    nn.ReLU(inplace=True)
+                )
+
+        self.features = nn.Sequential(
+            conv_block(3, 64),    # conv1
+            nn.MaxPool2d(2),
+
+            conv_block(64, 128),  # conv2
+            nn.MaxPool2d(2),
+
+            conv_block(128, 256), # conv3 ← IMPORTANT (we hook here)
+            nn.MaxPool2d(2),
+        )
+
+        self.classifier = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(256 * 28 * 28, 512),  # adjust if needed
+            nn.ReLU(),
+            nn.Linear(512, 10)  # change classes if needed
+        )
+
+    def forward(self, x):
+        x = self.features(x)
+        x = self.classifier(x)
+        return x
 
 class VGG11Encoder(nn.Module):
     def __init__(self, in_channels: int = 3):
